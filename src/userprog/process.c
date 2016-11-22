@@ -17,9 +17,11 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+void argument_stack (char **parse, int count, void **esp);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -29,19 +31,34 @@ tid_t
 process_execute (const char *file_name) 
 {
   char *fn_copy;
+  char *fn_copy2;
+  char *temp;
   tid_t tid;
 
   /* Make a copy of FILE_NAME.
      Otherwise there's a race between the caller and load(). */
   fn_copy = palloc_get_page (0);
+  fn_copy2 = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
+  if (fn_copy == NULL)
+    return TID_ERROR;
+
+  /* fn_copy, filed_name_2에 file_name 복사 */
   strlcpy (fn_copy, file_name, PGSIZE);
+  strlcpy (fn_copy2, file_name, PGSIZE);
+  /* file_name 문자열을 파싱
+   * 첫번째 토큰을 thread_create() 함수에 스레드 이름으로 전달 */
+  fn_copy2 = strtok_r (fn_copy2, " ", &temp);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  tid = thread_create ((const char *) fn_copy2, PRI_DEFAULT, start_process, fn_copy);
+
+  if (tid == TID_ERROR) {
+    palloc_free_page (fn_copy);
+    palloc_free_page (fn_copy2);
+  }
+
   return tid;
 }
 
@@ -53,18 +70,58 @@ start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+  /* 추가한 인자들 */
+  char **parse;
+  char *temp;
+  char *a;
+  int count = 0;
+
+  /* 실행파일 이름을 load의 첫 인자로 전달*/
+  parse = (char **) malloc (sizeof(char *) * 1);
+  temp = strtok_r (file_name, " ", &a);
+  parse[count] = (char *) malloc (sizeof(char) * strlen(temp));
+  strlcpy (parse[count], temp, strlen (temp) + 1);
+
+  /* 인자들을 토큰화 및 토큰의 개수 계산 */
+  while (file_name != NULL)
+    {
+      // TODO : 못빠져나온다!! => 해결: parse[count]에는 할당을 해주어야 했다. 복사하니까 당연한가
+      count += 1;
+      temp = strtok_r (NULL, " ", &a);
+      if (temp == NULL) {
+        break;
+      }
+      parse = (char **) realloc (parse, sizeof(char *) * (count + 1));
+      parse[count] = (char *) malloc (sizeof(char) * strlen(temp));
+      strlcpy (parse[count], temp, strlen (temp) + 1);
+    }
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+
+  success = load (parse[0], &if_.eip, &if_.esp);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) 
     thread_exit ();
+
+  /* 토큰화된 인자들을 스택에 저장 */
+  argument_stack(parse, count, &if_.esp);
+
+  /* 썼으면 반납! */
+  int i;
+  for (i = 0; i < count; i++)
+    {
+      free(parse[i]);
+    }
+  free(parse);
+
+  /* 중간 점검 */
+  hex_dump (if_.esp, if_.esp, PHYS_BASE - if_.esp, true);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -75,6 +132,46 @@ start_process (void *file_name_)
   asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
   NOT_REACHED ();
 }
+
+/* 유저 스택에 파싱된 토큰을 저장하는 함수 구현 */
+void
+argument_stack (char **parse, int count, void **esp)
+  {
+    int i;
+    // 지난번에 고생했던 것 : 스택에 저장한 주소를 스택에 다시 넣어줘야 하기 때문에! *
+    uint32_t argv_addr[count];
+
+    for (i = count -1; i > -1; i--)
+      {
+        *esp -= (strlen(parse[i]) + 1);  //NULL문자 자리까지 스택에 추가해주기. 포인터 연산
+        memcpy (*esp, parse[i], strlen (parse[i]) + 1); // 메모리 복사
+        argv_addr[i] = (uint32_t) (*esp);  // 방금 쓰인 스택의 주소를 임시 저장
+      }
+
+    /* 워드 사이즈 (4바이트)로 정렬해주기.
+     * 정렬 후에는 포인터 연산시 4바이트씩 연산 */
+    *esp = (uint32_t) (*esp) & 0xfffffffc;
+    *esp -= 4;
+    memset (*esp, 0, sizeof (uint32_t)); // 프린트에서 uint8_t라고 되어있는 바로 그곳..
+
+    for (i = count - 1; i > -1; i--)
+      {
+        *esp -= 4;  // 리마인드~ *esp는 지금 포인터야!
+        // *esp라는 포인터를 (uint32_t *)로 선언해주고 다시 그 값에 해당하는 것을 대입.
+        // Q: esp는 왜 이중포인터로 넘어온거지..?
+        * (uint32_t *) (*esp) = argv_addr[i];
+      }
+
+    *esp -= 4;
+    // * (uint32_t *) (*esp) = argv_addr[0];
+    * (uint32_t *) (*esp) = (uint32_t) (*esp) + 4; //닮이
+
+    *esp -= 4;
+    * (uint32_t *) (*esp) = (uint32_t) count;
+
+    *esp -= 4;
+    memset (*esp, 0, sizeof (uint32_t)); //가짜 반환 주소까지 스택에 넣어주기.
+  }
 
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
