@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -100,6 +101,17 @@ struct thread
 
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
+
+    /* 3. 프로세스 계층 구조 ~ */
+    struct thread *parent;
+    struct list_elem child;
+    struct list children;
+
+    int is_loaded;
+    int is_exit;
+    struct semaphore load_sema;
+    struct semaphore exit_sema;
+    int exit_status;  // thread_status 랑 뭐가 달라요..?
   };
 
 /* If false (default), use round-robin scheduler.

@@ -206,6 +206,19 @@ thread_create (const char *name, int priority,
 
   intr_set_level (old_level);
 
+  /* 부모 프로세스 저장 */
+  t->parent = thread_current ();
+  /* 프로그램이 로드되지 않음 */
+  t->is_loaded = 0;
+  /* 프로그램이 종료되지 않음 */
+  t->is_exit = 0;
+  /* load semaphore 0으로 초기화 */
+  sema_init (&t->load_sema, 0);
+  /* exit semaphore 0으로 초기화 */
+  sema_init (&t->exit_sema, 0);
+  /* 자식 리스트에 추가 */
+  list_push_back (&thread_current ()->children, &t->child);
+
   /* Add to run queue. */
   thread_unblock (t);
 
@@ -383,7 +396,7 @@ thread_get_recent_cpu (void)
   /* Not yet implemented. */
   return 0;
 }
-
+
 /* Idle thread.  Executes when no other thread is ready to run.
 
    The idle thread is initially put on the ready list by
@@ -432,7 +445,7 @@ kernel_thread (thread_func *function, void *aux)
   function (aux);       /* Execute the thread function. */
   thread_exit ();       /* If function() returns, kill the thread. */
 }
-
+
 /* Returns the running thread. */
 struct thread *
 running_thread (void) 
@@ -470,6 +483,9 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
+
+  /* 자식 리스트 초기화 */
+  list_init(&t->children);
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -581,7 +597,7 @@ allocate_tid (void)
 
   return tid;
 }
-
+
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);

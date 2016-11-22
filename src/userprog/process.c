@@ -21,6 +21,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+
 void argument_stack (char **parse, int count, void **esp);
 
 /* Starts a new thread running a user program loaded from
@@ -173,6 +174,31 @@ argument_stack (char **parse, int count, void **esp)
     memset (*esp, 0, sizeof (uint32_t)); //가짜 반환 주소까지 스택에 넣어주기.
   }
 
+struct thread *
+get_child_process (int pid)
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+
+  for (e = list_begin (&cur->children); e != list_end (&cur->children);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry(e, struct thread, child);
+      if (t->tid == pid)
+        {
+          return t;
+        }
+    }
+  return NULL;
+}
+
+void
+remove_child_process (struct thread *p)
+{
+  list_remove(&p->child);
+  palloc_free_page ((void *) p);
+}
+
 /* Waits for thread TID to die and returns its exit status.  If
    it was terminated by the kernel (i.e. killed due to an
    exception), returns -1.  If TID is invalid or if it was not a
@@ -228,7 +254,7 @@ process_activate (void)
      interrupts. */
   tss_update ();
 }
-
+
 /* We load ELF binaries.  The following definitions are taken
    from the ELF specification, [ELF1], more-or-less verbatim.  */
 

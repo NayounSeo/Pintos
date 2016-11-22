@@ -4,14 +4,15 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include <devices/shutdown.h>
-#include <threads/thread.h>
 #include <filesys/filesys.h>
+#include "userprog/process.h"
 
 static void syscall_handler (struct intr_frame *);
 void sys_halt (void);
 void sys_exit (int status);
 bool sys_create (const char *file, unsigned initial_size);
 bool sys_remove (const char *file);
+tid_t sys_exec (const char *cmd_line);
 
 void check_address(void *addr);
 void get_argument(void *esp, int *arg, int count);
@@ -27,7 +28,7 @@ static void
 syscall_handler (struct intr_frame *f) 
 {
   /* slide 102 복붙 ^0^ */
-  void *esp = f -> esp;
+  void *esp = f->esp;
   check_address (esp);
   int sys_no = * (uint32_t *) (esp);
   int arg[4];
@@ -45,11 +46,9 @@ syscall_handler (struct intr_frame *f)
       break;
     }
     case SYS_EXEC: {
-      /* 3장의 것을 일단 그대로 
-      */
-      // get_argument (esp, arg, 1);
-      // check_address ((void *) arg[0]);
-      // f->eax = exec((cons char *) arg[0]);
+      get_argument (esp, arg, 1);
+      check_address ((void *) arg[0]);
+      f->eax = sys_exec((const char *) arg[0]);
       break;
     }
     // case SYS_WAIT: {
@@ -60,14 +59,14 @@ syscall_handler (struct intr_frame *f)
       check_address((void *) arg[0]);
       const char *f1 = (char *) arg[0];
       unsigned init_size = * (unsigned *) arg[1];
-      f -> eax = sys_create (f1, init_size);
+      f->eax = sys_create (f1, init_size);
       break;
     }
     case SYS_REMOVE: {
       get_argument(esp, arg, 1);
       check_address((void *) arg[0]);
       const char *f2 = (char *) arg[0];
-      f -> eax = sys_remove (f2);
+      f->eax = sys_remove (f2);
       break;
     }
   }
@@ -97,6 +96,17 @@ bool sys_create(const char *file, unsigned initial_size)
 bool sys_remove(const char *file)
 {
   return filesys_remove(file);
+}
+
+tid_t
+sys_exec (const char *cmd_line)
+{
+  tid_t tid = process_execute(cmd_line);
+  // if (tid == -1)
+    // TODO : ????
+
+  struct thread *p = get_child_process(tid);  // TODO : ????
+
 }
 
 void check_address(void * addr)
