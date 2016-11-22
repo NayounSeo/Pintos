@@ -85,7 +85,7 @@ start_process (void *file_name_)
   /* 인자들을 토큰화 및 토큰의 개수 계산 */
   while (file_name != NULL)
     {
-      // TODO : 못빠져나온다!! => 해결: parse[count]에는 할당을 해주어야 했다. 복사하니까 당연한가
+      // A : parse[count]에는 할당을 해주어야 했다. 복사하니까 당연한가
       count += 1;
       temp = strtok_r (NULL, " ", &a);
       if (temp == NULL) {
@@ -121,7 +121,7 @@ start_process (void *file_name_)
   free(parse);
 
   /* 중간 점검 */
-  hex_dump (if_.esp, if_.esp, PHYS_BASE - if_.esp, true);
+  // hex_dump (if_.esp, if_.esp, PHYS_BASE - if_.esp, true);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
