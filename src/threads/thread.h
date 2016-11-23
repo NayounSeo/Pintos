@@ -111,7 +111,10 @@ struct thread
     int is_exit;
     struct semaphore load_sema;
     struct semaphore exit_sema;
-    int exit_status;  // thread_status 랑 뭐가 달라요..?
+    int exit_status;
+
+    struct file **fd_table;
+    uint32_t fd_size;
   };
 
 /* If false (default), use round-robin scheduler.

@@ -105,10 +105,19 @@ start_process (void *file_name_)
 
   success = load (parse[0], &if_.eip, &if_.esp);
 
+  // printf("success = %d\n", success);
+  /* 적재 (load) 성공 시 부모 프로세스 다시 진행 */
+  sema_up(&thread_current ()->load_sema); // TODO : 이래도 잘 들어가나..?
+
   /* If load failed, quit. */
   palloc_free_page (file_name);
-  if (!success) 
+  if (!success) {
+    /* TODO 메모리 적재 실패 시 프로세스 디스크립터에 메모리 적재 실패 */
+    thread_current ()-> is_loaded = 0;
     thread_exit ();
+  }
+  /* TODO 메모리 적재 성공 시 프로세스 디스크립터에 메모리 적재 성공 */
+  thread_current ()-> is_loaded = 1;
 
   /* 토큰화된 인자들을 스택에 저장 */
   argument_stack(parse, count, &if_.esp);
@@ -209,9 +218,44 @@ remove_child_process (struct thread *p)
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
 int
-process_wait (tid_t child_tid UNUSED) 
+process_wait (tid_t child_tid) 
 {
-  return -1;
+  struct thread *child = get_child_process(child_tid);
+  if (child == NULL) {
+    return -1;
+  }
+  sema_down(&child->exit_sema);
+
+  // int exit_status = child->status;
+  int exit_status = child->exit_status;
+  remove_child_process(child);
+
+  return exit_status;
+}
+
+int
+process_add_file (struct file *f)
+{
+  struct thread *cur =  thread_current ();
+  // cur->fd_table = (struct file **) realloc (cur->fd_table, 
+                               // sizeof(struct file *) * (cur->fd_size + 1));
+  // TODO : 여기에 동적 할당이 필요할까? 이미 파일에 할당되어 온 후일 것 같다
+  cur->fd_table[cur->fd_size] = f;
+  return cur->fd_size++;
+}
+
+struct file *
+process_get_file (int fd)
+{
+  struct file *f = thread_current ()->fd_table[fd];
+  return f;  // 없을 시 NULL 리턴
+}
+
+void process_close_file (int fd)
+{
+  struct file *f = process_get_file(fd);
+  file_close(f);
+  thread_current ()->fd_table[fd] = NULL;
 }
 
 /* Free the current process's resources. */
@@ -220,6 +264,14 @@ process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
+  uint32_t fd; 
+  /* 프로세스에 열린 모든 파일을 닫음 */
+  for (fd = 2; fd < cur->fd_size; fd++) {
+      process_close_file(fd);
+  }
+
+  /* 파일 디스크립터 메모리 테이블 해제 */
+  palloc_free_page (cur->fd_table);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

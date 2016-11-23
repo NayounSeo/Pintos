@@ -11,4 +11,9 @@ void process_activate (void);
 struct thread *get_child_process (int pid);
 void remove_child_process (struct thread *p);
 
+int process_add_file (struct file *f);
+struct file *process_get_file (int fd);
+void process_close_file (int fd);
+
+
 #endif /* userprog/process.h */

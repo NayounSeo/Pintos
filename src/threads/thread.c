@@ -217,7 +217,12 @@ thread_create (const char *name, int priority,
   /* exit semaphore 0으로 초기화 */
   sema_init (&t->exit_sema, 0);
   /* 자식 리스트에 추가 */
-  list_push_back (&thread_current ()->children, &t->child);
+  list_push_back (&t->parent->children, &t->child);
+
+  /* fd 값 초기화 - 0, 1은 표준 입출력 */
+  t->fd_size = 2;
+  /* fd 테이블에 메모리 할당 */
+  t->fd_table = palloc_get_page (0);
 
   /* Add to run queue. */
   thread_unblock (t);
@@ -311,7 +316,14 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-  list_remove (&thread_current()->allelem);
+  list_remove (&thread_current ()->allelem);
+
+  /* 프로세스 디스크립터에 프로세스 종료를 알림 */
+  thread_current ()->is_exit = 1;
+  /* 부모 프로세스의 대기 상태 이탈  */
+  if (strcmp (thread_name(), "main"))
+    sema_up(&thread_current ()->exit_sema);
+
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
@@ -557,7 +569,7 @@ thread_schedule_tail (struct thread *prev)
   if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
     {
       ASSERT (prev != cur);
-      palloc_free_page (prev);
+      // palloc_free_page (prev);
     }
 }
 
