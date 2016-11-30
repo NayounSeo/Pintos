@@ -330,8 +330,7 @@ get_argument(void *esp, int *arg, int count)
   /* 유저 스택에 저장된 인자값들을 커널로 저장.
    * 인자가 저장된 위치가 유저영역인지 check_address () 로 확인 */
   int i;
-  // for (i = count - 1; i > -1; i--) // TODO : ???? 역순인가 ㅠㅠ
-  for (i = 0; i < count; i++) // TODO : ???? 역순인가 ㅠㅠ
+  for (i = 0; i < count; i++) // 역순이 아니었어요!!
   {
     check_address(esp);
     arg[i] = * (uint32_t *) esp;

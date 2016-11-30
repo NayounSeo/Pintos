@@ -60,7 +60,6 @@ process_execute (const char *file_name)
     palloc_free_page (fn_copy2);
     
   }
-
   return tid;
 }
 
