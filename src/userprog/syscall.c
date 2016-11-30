@@ -48,6 +48,8 @@ syscall_handler (struct intr_frame *f)
 
   esp++;
 
+  // printf("-+-+_+_+_+_+_+%d-+_++_+_+_+_+\n", sys_no);
+
   switch (sys_no)
   {
     case SYS_HALT: {
@@ -57,7 +59,8 @@ syscall_handler (struct intr_frame *f)
     case SYS_EXIT: {
       // puts("SYS_EXIT");
       get_argument (esp, arg, 1);
-      int status = * (int *) arg[0];
+      int status = arg[0];
+      // printf("=-=-=-=-=-=-=-=%d+_+_+\n", status);
       sys_exit(status);
       break;
     }
@@ -71,7 +74,7 @@ syscall_handler (struct intr_frame *f)
     case SYS_WAIT: {
       // puts("SYS_WAIT");
       get_argument (esp, arg, 1);
-      int tid = * (int *) arg[0];
+      int tid = arg[0];
       f->eax = sys_wait(tid);
       break;
     }
@@ -80,7 +83,7 @@ syscall_handler (struct intr_frame *f)
       get_argument(esp, arg, 2);
       check_address((void *) arg[0]);
       const char *f1 = (char *) arg[0];
-      unsigned init_size = * (unsigned *) arg[1];
+      unsigned init_size = (unsigned )arg[1];
       f->eax = sys_create (f1, init_size);
       break;
     }
@@ -102,38 +105,38 @@ syscall_handler (struct intr_frame *f)
     case SYS_FILESIZE: {
       // puts("SYS_FILESIZE");
       get_argument (esp, arg, 1);
-      f->eax = sys_filesize((int) arg[0]);
+      f->eax = sys_filesize(arg[0]);
       break;
     }
     case SYS_READ: {
       // puts("SYS_READ");
       get_argument (esp, arg, 3);
       check_address ((void *) arg[1]);
-      f->eax = sys_read((int) arg[0], (void *) arg[1], (unsigned) arg[2]);
+      f->eax = sys_read(arg[0], (void *) arg[1], (unsigned) arg[2]);
       break;
     }
     case SYS_WRITE: {
       // puts("SYS_WRITE");
       get_argument (esp, arg, 3);
-      f->eax = sys_write((int) arg[0], (void *) arg[1], (unsigned) arg[2]);
+      f->eax = sys_write(arg[0], (void *) arg[1], (unsigned) arg[2]);
       break;
     }
     case SYS_SEEK: {
       // puts("SYS_SEEK");
       get_argument (esp, arg, 2);
-      sys_seek((int) arg[0], (unsigned) arg[1]);
+      sys_seek(arg[0], (unsigned) arg[1]);
       break;
     }
     case SYS_TELL: {
       // puts("SYS_TELL");
       get_argument (esp, arg, 1);
-      f->eax = sys_tell((int) arg[0]);
+      f->eax = sys_tell(arg[0]);
       break;
     }
     case SYS_CLOSE: {
       // puts("SYS_CLOSE");
       get_argument (esp, arg, 1);
-      sys_close((int) arg[0]);
+      sys_close(arg[0]);
       break;
     }
   }
@@ -188,7 +191,7 @@ int
 sys_wait (tid_t tid)
 {
   /* 자식 프로세스가 종료 될 때까지 대기 */
-  process_wait (tid);
+  return process_wait (tid);
 }
 
 // TODO : 여기서도 lock?
