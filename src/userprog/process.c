@@ -50,15 +50,15 @@ process_execute (const char *file_name)
   strlcpy (fn_copy2, file_name, PGSIZE);
   /* file_name 문자열을 파싱
    * 첫번째 토큰을 thread_create() 함수에 스레드 이름으로 전달 */
-  fn_copy2 = strtok_r (fn_copy2, " ", &temp);
+  const char * thread_name = strtok_r (fn_copy2, " ", &temp);
 
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create ((const char *) fn_copy2, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (thread_name, PRI_DEFAULT, start_process, fn_copy);
 
+  palloc_free_page (fn_copy2);
+  
   if (tid == TID_ERROR) {
     palloc_free_page (fn_copy);
-    palloc_free_page (fn_copy2);
-    
   }
   return tid;
 }
@@ -107,17 +107,18 @@ start_process (void *file_name_)
 
   // printf("success = %d\n", success);
   /* 적재 (load) 성공 시 부모 프로세스 다시 진행 */
-  sema_up(&thread_current ()->load_sema); // TODO : 이래도 잘 들어가나..?
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
   if (!success) {
     /* TODO 메모리 적재 실패 시 프로세스 디스크립터에 메모리 적재 실패 */
     thread_current ()-> is_loaded = 0;
+    sema_up(&thread_current ()->load_sema); // TODO : 이래도 잘 들어가나..?
     thread_exit ();
   }
   /* TODO 메모리 적재 성공 시 프로세스 디스크립터에 메모리 적재 성공 */
   thread_current ()-> is_loaded = 1;
+  sema_up(&thread_current ()->load_sema); // TODO : 이래도 잘 들어가나..?
 
   /* 토큰화된 인자들을 스택에 저장 */
   argument_stack(parse, count, &if_.esp);
@@ -215,8 +216,7 @@ remove_child_process (struct thread *p)
    been successfully called for the given TID, returns -1
    immediately, without waiting.
 
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
+   This function will be implemented in problem 2-2. */
 int
 process_wait (tid_t child_tid) 
 {
@@ -225,7 +225,6 @@ process_wait (tid_t child_tid)
     return -1;
   }
   sema_down(&child->exit_sema);
-
   // int exit_status = child->status;
   int exit_status = child->exit_status;
   remove_child_process(child);
@@ -237,6 +236,10 @@ int
 process_add_file (struct file *f)
 {
   struct thread *cur =  thread_current ();
+  /* 16-11-30 NULL 처리 추가 */
+  if (f == NULL) {
+    return -1;
+  }
   // cur->fd_table = (struct file **) realloc (cur->fd_table, 
                                // sizeof(struct file *) * (cur->fd_size + 1));
   // TODO : 여기에 동적 할당이 필요할까? 이미 파일에 할당되어 온 후일 것 같다
@@ -247,15 +250,25 @@ process_add_file (struct file *f)
 struct file *
 process_get_file (int fd)
 {
+  /* 16-11-30 NULL 처리 추가 */
+  if (fd < 0) {
+    return NULL;
+  }
   struct file *f = thread_current ()->fd_table[fd];
   return f;  // 없을 시 NULL 리턴
 }
 
 void process_close_file (int fd)
 {
+  /* 16-11-30 NULL 처리 추가 */
+  if (fd < 0) {
+    return NULL;
+  }
   struct file *f = process_get_file(fd);
   file_close(f);
   thread_current ()->fd_table[fd] = NULL;
+  /* 16-11-30 발견..! */
+  // thread_current ()->fd_size -= 1;
 }
 
 /* Free the current process's resources. */
@@ -271,7 +284,7 @@ process_exit (void)
   }
 
   /* 파일 디스크립터 메모리 테이블 해제 */
-  palloc_free_page (cur->fd_table);
+  palloc_free_page ((void *) cur->fd_table);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

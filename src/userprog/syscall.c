@@ -52,11 +52,11 @@ syscall_handler (struct intr_frame *f)
 
   switch (sys_no)
   {
-    case SYS_HALT: {
+    case SYS_HALT: {  // 0
       sys_halt ();
       break;
     }
-    case SYS_EXIT: {
+    case SYS_EXIT: {  // 1
       // puts("SYS_EXIT");
       get_argument (esp, arg, 1);
       int status = arg[0];
@@ -64,21 +64,21 @@ syscall_handler (struct intr_frame *f)
       sys_exit(status);
       break;
     }
-    case SYS_EXEC: {
+    case SYS_EXEC: {  // 2
       // puts("SYS_EXEC");
       get_argument (esp, arg, 1);
       check_address ((void *) arg[0]);
       f->eax = sys_exec((const char *) arg[0]);
       break;
     }
-    case SYS_WAIT: {
+    case SYS_WAIT: {  // 3
       // puts("SYS_WAIT");
       get_argument (esp, arg, 1);
-      int tid = arg[0];
+      int tid = (int) arg[0];
       f->eax = sys_wait(tid);
       break;
     }
-    case SYS_CREATE: {
+    case SYS_CREATE: {   // 4
       // puts("SYS_CREATE");
       get_argument(esp, arg, 2);
       check_address((void *) arg[0]);
@@ -87,7 +87,7 @@ syscall_handler (struct intr_frame *f)
       f->eax = sys_create (f1, init_size);
       break;
     }
-    case SYS_REMOVE: {
+    case SYS_REMOVE: {  // 5
       // puts("SYS_REMOVE");
       get_argument(esp, arg, 1);
       check_address((void *) arg[0]);
@@ -95,45 +95,45 @@ syscall_handler (struct intr_frame *f)
       f->eax = sys_remove (f2);
       break;
     }
-    case SYS_OPEN: {
+    case SYS_OPEN: {  // 6
       // puts("SYS_OPEN");
       get_argument (esp, arg, 1);
       check_address ((void *) arg[0]);
       f->eax = sys_open((const char *) arg[0]);
       break;
     }
-    case SYS_FILESIZE: {
+    case SYS_FILESIZE: {  // 7
       // puts("SYS_FILESIZE");
       get_argument (esp, arg, 1);
       f->eax = sys_filesize(arg[0]);
       break;
     }
-    case SYS_READ: {
+    case SYS_READ: {  // 8
       // puts("SYS_READ");
       get_argument (esp, arg, 3);
       check_address ((void *) arg[1]);
       f->eax = sys_read(arg[0], (void *) arg[1], (unsigned) arg[2]);
       break;
     }
-    case SYS_WRITE: {
+    case SYS_WRITE: {  // 9
       // puts("SYS_WRITE");
       get_argument (esp, arg, 3);
       f->eax = sys_write(arg[0], (void *) arg[1], (unsigned) arg[2]);
       break;
     }
-    case SYS_SEEK: {
+    case SYS_SEEK: {  // 10
       // puts("SYS_SEEK");
       get_argument (esp, arg, 2);
       sys_seek(arg[0], (unsigned) arg[1]);
       break;
     }
-    case SYS_TELL: {
+    case SYS_TELL: {  // 11
       // puts("SYS_TELL");
       get_argument (esp, arg, 1);
       f->eax = sys_tell(arg[0]);
       break;
     }
-    case SYS_CLOSE: {
+    case SYS_CLOSE: {  // 12
       // puts("SYS_CLOSE");
       get_argument (esp, arg, 1);
       sys_close(arg[0]);
@@ -146,7 +146,6 @@ syscall_handler (struct intr_frame *f)
 void sys_halt(void)
 {
   shutdown_power_off();
-  return;
 }
 
 void sys_exit(int status)
@@ -160,6 +159,7 @@ void sys_exit(int status)
 
 bool sys_create(const char *file, unsigned initial_size)
 {
+  check_address ((void *) file);
   lock_acquire (&l);
   bool success = filesys_create(file, (off_t) initial_size);
   lock_release (&l);
@@ -168,6 +168,7 @@ bool sys_create(const char *file, unsigned initial_size)
 
 bool sys_remove(const char *file)
 {
+  check_address ((void *) file);
   lock_acquire (&l);
   bool success = filesys_remove(file);
   lock_release (&l);
@@ -177,11 +178,17 @@ bool sys_remove(const char *file)
 tid_t
 sys_exec (const char *cmd_line)
 {
+  check_address ((void *) cmd_line);
   tid_t tid = process_execute (cmd_line);
   struct thread *p = get_child_process(tid);
+  if (p == NULL)
+  {
+    return -1;
+  }
   sema_down (&p->load_sema);
 
-  if (p->is_loaded == 0) {
+  if (p->is_loaded == 0)
+  {
     return -1;
   }
   return tid;
@@ -198,6 +205,7 @@ sys_wait (tid_t tid)
 int
 sys_open (const char *file)
 {
+  check_address ((void *) file);
   lock_acquire (&l);
   struct file *f = filesys_open (file);
   if (f == NULL) {
@@ -212,12 +220,11 @@ sys_open (const char *file)
 int
 sys_filesize (int fd)
 {
-  lock_acquire (&l);
   struct file *f = process_get_file (fd);
   if (f == NULL) {
-    lock_release (&l);
     return -1;
   }
+  lock_acquire (&l);
   int size = (int) file_length (f);
   lock_release (&l);
   return size;
@@ -226,7 +233,7 @@ sys_filesize (int fd)
 int
 sys_read (int fd, void *buffer, unsigned size)
 {
-  lock_acquire (&l);
+  check_address ((void *) buffer);
   // puts("sys_read--------------||||--------------");
 
   struct file *f = process_get_file (fd);
@@ -237,13 +244,12 @@ sys_read (int fd, void *buffer, unsigned size)
     for (i = 0; i < size; i++) {
       * (uint8_t *) buffer = input_getc ();
     }
-    lock_release(&l);
     return (int) size;
   } else {
     if (f == NULL) {
-      lock_release (&l);
       return -1;
     }
+    lock_acquire (&l);
     /* 파일에 데이터를 크기만큼 저장 후 읽은 바이트 수를 리턴 */
     bytes = (int) file_read (f, buffer, size);
     lock_release (&l);
@@ -254,21 +260,20 @@ sys_read (int fd, void *buffer, unsigned size)
 int
 sys_write (int fd, void *buffer, unsigned size)
 {
-  lock_acquire (&l);
+  check_address ((void *) buffer);
   // puts("sys_write--------------||||--------------");
   
   struct file *f = process_get_file (fd);
   if (fd == 1) {
     /* 버퍼에 저장된 값을 화면에 출력 */
     putbuf ((const char *)buffer, size);
-    lock_release (&l);
     return size;
   } else {
     if (f == NULL) {
-      lock_release (&l);
       return -1;
     }
 
+    lock_acquire (&l);
     /* 버퍼에 저장된 데이터를 크기만큼 파일에 기록 후 기록한 바이트 수를 리턴 */
     off_t bytes = file_write (f, buffer, size);
     lock_release (&l);
@@ -279,12 +284,11 @@ sys_write (int fd, void *buffer, unsigned size)
 void
 sys_seek (int fd, unsigned position)
 {
-  lock_acquire (&l);
   struct file *f = process_get_file (fd);
   if (f == NULL) {
-    lock_release (&l);
-    return -1;
+    return;
   }
+  lock_acquire (&l);
   file_seek (f, (off_t) position);
   lock_release (&l);
   return;
@@ -293,12 +297,11 @@ sys_seek (int fd, unsigned position)
 unsigned
 sys_tell (int fd)
 {
-  lock_acquire (&l);
   struct file *f = process_get_file (fd);
   if (f == NULL) {
-    lock_release (&l);
     return -1;
   }
+  lock_acquire (&l);
   unsigned pos = (unsigned) file_tell (f);
   lock_release (&l);
   return pos;
@@ -310,7 +313,6 @@ sys_close (int fd)
   lock_acquire (&l);
   process_close_file (fd);
   lock_release (&l);
-  return;
 }
 
 void
