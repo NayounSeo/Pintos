@@ -179,7 +179,7 @@ sys_exec (const char *cmd_line)
 {
   tid_t tid = process_execute (cmd_line);
   struct thread *p = get_child_process(tid);
-  sema_down (&thread_current ()->load_sema);
+  sema_down (&p->load_sema);
 
   if (p->is_loaded == 0) {
     return -1;
