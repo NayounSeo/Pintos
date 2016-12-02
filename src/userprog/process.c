@@ -278,10 +278,14 @@ process_exit (void)
   struct thread *cur = thread_current ();
   uint32_t *pd;
   uint32_t fd; 
+  
   /* 프로세스에 열린 모든 파일을 닫음 */
   for (fd = 2; fd < cur->fd_size; fd++) {
       process_close_file(fd);
   }
+
+  /* 실행 중인 파일 close */
+  file_close(cur->run_file);
 
   /* 파일 디스크립터 메모리 테이블 해제 */
   palloc_free_page ((void *) cur->fd_table);
@@ -289,6 +293,7 @@ process_exit (void)
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
+
   if (pd != NULL) 
     {
       /* Correct ordering here is crucial.  We must set
@@ -403,19 +408,31 @@ load (const char *file_name, void (**eip) (void), void **esp)
   bool success = false;
   int i;
 
+  struct lock l;
+  lock_init(&l);
+
   /* Allocate and activate page directory. */
   t->pagedir = pagedir_create ();
   if (t->pagedir == NULL) 
     goto done;
   process_activate ();
 
+
+  lock_acquire (&l);  // lock 획득
   /* Open executable file. */
   file = filesys_open (file_name);
   if (file == NULL) 
     {
       printf ("load: %s: open failed\n", file_name);
+      lock_release (&l);  // lock 해제 
       goto done; 
     }
+
+    /* thread 구조체의 run_file을 현재 실행할 파일로 초기화 */
+  t->run_file = file;
+  /* file_deny_write()를 이용하여 파일에 대한 write를 거부 */
+  file_deny_write(file);
+  lock_release (&l);  // lock 해제 
 
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -500,10 +517,10 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  // file_close (file);
   return success;
 }
-
+
 /* load() helpers. */
 
 static bool install_page (void *upage, void *kpage, bool writable);

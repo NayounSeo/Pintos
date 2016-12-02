@@ -115,6 +115,8 @@ struct thread
 
     struct file **fd_table;
     uint32_t fd_size;
+
+    struct file *run_file;
   };
 
 /* If false (default), use round-robin scheduler.
