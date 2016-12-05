@@ -91,9 +91,13 @@ timer_sleep (int64_t ticks)
 {
   int64_t start = timer_ticks ();
 
+  /* 새로 구현한 thread를 sleep queue에 삽입하는 함수를 호출 */
+  thread_sleep (ticks);
+
+  /* busy waiting을 유발하는 loop 기반 alarm 코드 
   ASSERT (intr_get_level () == INTR_ON);
   while (timer_elapsed (start) < ticks) 
-    thread_yield ();
+    thread_yield ();*/
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -165,13 +169,16 @@ timer_print_stats (void)
 {
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
-
+
 /* Timer interrupt handler. */
 static void
-timer_interrupt (struct intr_frame *args UNUSED)
+timer_interrupt (struct intr_frame *args)
 {
   ticks++;
   thread_tick ();
+
+  /* 매 tick마다 sleep queue에서 깨어날 thread가 있는지 확인하여, 깨우는 함수 호출 */
+  thread_awake (ticks);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

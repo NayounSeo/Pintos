@@ -28,6 +28,12 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
+/* Alarm system call : THREAD_BLOCKED 상태의 스레드를 관리하기 위한 리스트 자료 구조 추가 */
+static struct list sleep_list;
+
+/* sleep_list 에서 대기중인 스레드들의 wakeup_tick 값 중 최소값을 저장 */
+static int64_t next_tick_to_awake;
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -92,6 +98,7 @@ thread_init (void)
   lock_init (&tid_lock);
   list_init (&ready_list);
   list_init (&all_list);
+  list_init (&sleep_list);
 
   /* Set up a thread structure for the running thread. */
   initial_thread = running_thread ();
@@ -613,3 +620,40 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/* thread를 blocked 상태로 만들고 sleep queue에 삽입하여 대기 
+ * timer_sleep() 함수에 의해 호출 */
+void thread_sleep (int64_t ticks)
+{
+  struct thread *cur = thread_current ();
+  enum intr_level old_level = intr_disable ();
+
+  if (cur != idle_thread)
+  {
+    cur->wakeup_tick = ticks;
+    list_push_back(&sleep_list, &cur->elem);
+    thread_block ();
+    /* awake 함수가 실행되어야 할 tick 값을 update */
+  }
+  intr_set_level (old_level);
+}
+
+void thread_awake (int64_t ticks)
+{
+  struct list_elem *e;
+  for (e = list_begin (&sleep_list); e != list_end (&sleep_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry(e, struct thread, child);
+      if (t->wakeup_tick >= ticks)
+        {
+          /* 슬립 큐에서 제거하고 unblock 한다 */
+          list_remove (e);
+          thread_unblock (t);
+        }
+      else
+        {
+          update_next_tick_to_awake (ticks);
+        }
+    }
+}
