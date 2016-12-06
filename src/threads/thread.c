@@ -31,7 +31,7 @@ static struct list all_list;
 /* Alarm system call : THREAD_BLOCKED 상태의 스레드를 관리하기 위한 리스트 자료 구조 추가 */
 static struct list sleep_list;
 
-/* sleep_list 에서 대기중인 스레드들의 wakeup_tick 값 중 최소값을 저장 */
+/* sleep_list 에서 대기중인 스레드들의 wakeup_tick 값 중 최소값 */
 static int64_t next_tick_to_awake;
 
 /* Idle thread. */
@@ -628,32 +628,48 @@ void thread_sleep (int64_t ticks)
   struct thread *cur = thread_current ();
   enum intr_level old_level = intr_disable ();
 
-  if (cur != idle_thread)
-  {
-    cur->wakeup_tick = ticks;
-    list_push_back(&sleep_list, &cur->elem);
-    thread_block ();
-    /* awake 함수가 실행되어야 할 tick 값을 update */
-  }
+  ASSERT (cur != idle_thread);
+  cur->wakeup_tick = ticks;
+  /* awake 함수가 실행되어야 할 tick 값을 update */
+  update_next_tick_to_awake (ticks);
+
+  list_push_back(&sleep_list, &cur->elem);
+  thread_block ();
+
   intr_set_level (old_level);
 }
 
 void thread_awake (int64_t ticks)
 {
   struct list_elem *e;
-  for (e = list_begin (&sleep_list); e != list_end (&sleep_list);
-       e = list_next (e))
+  for (e = list_begin (&sleep_list); e != list_end (&sleep_list);)
     {
-      struct thread *t = list_entry(e, struct thread, child);
-      if (t->wakeup_tick >= ticks)
+      struct thread *t = list_entry(e, struct thread, elem);
+      if (t->wakeup_tick <= ticks)
         {
           /* 슬립 큐에서 제거하고 unblock 한다 */
-          list_remove (e);
+          e = list_remove (e);
           thread_unblock (t);
         }
       else
         {
           update_next_tick_to_awake (ticks);
+          e = list_next (e);
         }
     }
+}
+
+void update_next_tick_to_awake (int64_t ticks)
+{
+  /* next_tick_to_awake 가 깨워야할 스레드 중 가장 작은 tick을 갖도록 업데이트 */
+  if (next_tick_to_awake > ticks)
+  {
+    next_tick_to_awake = ticks;
+  }
+}
+
+int64_t get_next_tick_to_awake ()
+{
+  /* next_tick_to_awake를 반환한다 */
+  return next_tick_to_awake;
 }
