@@ -68,7 +68,8 @@ sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0) 
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
+      // list_push_back (&sema->waiters, &thread_current ()->elem);
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem, cmp_sem_priority, NULL);
       thread_block ();
     }
   sema->value--;
@@ -113,10 +114,17 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters)) 
+  if (!list_empty (&sema->waiters)) {
+    /* 스레드가 waiters list에 있는 동안 우선 순위가 변경 되었을 경우를 고려하여 우선 순위로 정렬 */
+    list_sort (&sema->waiters, cmp_sema_priority, NULL);
     thread_unblock (list_entry (list_pop_front (&sema->waiters),
                                 struct thread, elem));
+  }
   sema->value++;
+
+  /* priority preemption 코드 추가 */
+  test_max_priority ();
+
   intr_set_level (old_level);
 }
 
@@ -156,7 +164,7 @@ sema_test_helper (void *sema_)
       sema_up (&sema[1]);
     }
 }
-
+
 /* Initializes LOCK.  A lock can be held by at most a single
    thread at any given time.  Our locks are not "recursive", that
    is, it is an error for the thread currently holding a lock to
@@ -245,7 +253,7 @@ lock_held_by_current_thread (const struct lock *lock)
 
   return lock->holder == thread_current ();
 }
-
+
 /* One semaphore in a list. */
 struct semaphore_elem 
   {
@@ -335,4 +343,24 @@ cond_broadcast (struct condition *cond, struct lock *lock)
 
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
+}
+
+bool
+cmp_sem_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct semaphore_elem *s_elt_a = list_entry(a, struct semaphore_elem, elem);
+  struct semaphore_elem *s_elt_b = list_entry(b, struct semaphore_elem, elem);
+
+  // TODO : 먼저 semaphore_elem 으로부터 semaphore를 가져오고
+  // a, b 각각의 waiters를 가져온다.
+  struct list_elem *elt_a = list_front (&s_elt_a->semaphore.waiters);
+  struct list_elem *elt_b = list_front (&s_elt_b->semaphore.waiters);
+
+  struct thread *a_thread = list_entry (elt_a, struct thread, elem);
+  struct thread *b_thread = list_entry (elt_b, struct thread, elem);
+
+  if (a_thread->priority > b_thread->priority) {
+    return true;
+  }
+  return false;
 }
