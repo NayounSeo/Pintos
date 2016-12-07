@@ -69,7 +69,7 @@ sema_down (struct semaphore *sema)
   while (sema->value == 0) 
     {
       // list_push_back (&sema->waiters, &thread_current ()->elem);
-      list_insert_ordered (&sema->waiters, &thread_current ()->elem, cmp_sem_priority, NULL);
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem, cmp_priority, NULL);
       thread_block ();
     }
   sema->value--;
@@ -116,7 +116,7 @@ sema_up (struct semaphore *sema)
   old_level = intr_disable ();
   if (!list_empty (&sema->waiters)) {
     /* 스레드가 waiters list에 있는 동안 우선 순위가 변경 되었을 경우를 고려하여 우선 순위로 정렬 */
-    list_sort (&sema->waiters, cmp_sema_priority, NULL);
+    list_sort (&sema->waiters, cmp_priority, NULL);
     thread_unblock (list_entry (list_pop_front (&sema->waiters),
                                 struct thread, elem));
   }
@@ -303,7 +303,9 @@ cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
   
   sema_init (&waiter.semaphore, 0);
-  list_push_back (&cond->waiters, &waiter.elem);
+  /* condition variable의 waiters list에 우선 순위 순서로 삽입되도록 수정 */
+  list_insert_ordered (&cond->waiters, &waiter.elem, cmp_sem_priority, NULL);
+  // list_push_back (&cond->waiters, &waiter.elem);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -324,9 +326,12 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED)
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) 
+  if (!list_empty (&cond->waiters)) {
+    /* condition variable의 waiters list를 우선 순위로 재 정열 */
+    list_sort (&cond->waiters, cmp_sem_priority, NULL);
     sema_up (&list_entry (list_pop_front (&cond->waiters),
                           struct semaphore_elem, elem)->semaphore);
+  }
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
@@ -353,9 +358,12 @@ cmp_sem_priority (const struct list_elem *a, const struct list_elem *b, void *au
 
   // TODO : 먼저 semaphore_elem 으로부터 semaphore를 가져오고
   // a, b 각각의 waiters를 가져온다.
-  struct list_elem *elt_a = list_front (&s_elt_a->semaphore.waiters);
-  struct list_elem *elt_b = list_front (&s_elt_b->semaphore.waiters);
+  struct semaphore sa = s_elt_a->semaphore;
+  struct semaphore sb = s_elt_b->semaphore;
 
+  struct list_elem *elt_a = list_front (&sa.waiters);
+  struct list_elem *elt_b = list_front (&sb.waiters);
+  
   struct thread *a_thread = list_entry (elt_a, struct thread, elem);
   struct thread *b_thread = list_entry (elt_b, struct thread, elem);
 
