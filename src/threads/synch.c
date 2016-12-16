@@ -216,7 +216,7 @@ lock_acquire (struct lock *lock)
 
     if (holder->priority < thread_current ()->priority)
     {
-      // holder->priority = thread_current ()->priority;
+      holder->priority = thread_current ()->priority;
       list_insert_ordered (&holder->donations, &thread_current ()->donation_elem, cmp_priority, NULL);
     }
     /* priority donation을 수행하기 위해 donate_priority () 함수 호출 */

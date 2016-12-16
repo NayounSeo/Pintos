@@ -391,45 +391,6 @@ thread_set_priority (int new_priority)
   /* donation을 고려하여 thread_set_priority 수정
    * refresh_priority()를 사용하여 우선 선위 변경으로 인한 donation 관련 정보를 갱신한다. 
    * donation_priority, test_max_priority() 적절히 사용하고 스케줄링 */
-  // enum intr_level old_level;
-  // old_level = intr_disable ();
-  // struct thread *cur = thread_current ();
-  // int old_priority = cur->priority;
-
-  // // 현재 스레드가 기부받지 않았을 때
-  // if (list_empty (&cur->donations))
-  // {
-  //   // new_priority로 초기 우선 순위와 현재 우선 순위 모두 수정
-  //   cur->init_priority = new_priority;
-  //   cur->priority = new_priority;
-  // }
-  // else  // 기부받은 우선 순위가 있었다면
-  // {
-  //   refresh_priority ();
-
-  //   if (new_priority < cur->priority)
-  //   {
-  //     cur->init_priority = new_priority;  // 초기 우선 순위만 수정
-  //   }
-  //   else
-  //   {
-  //     cur->priority = new_priority;
-  //   }
-  // }
-
-  // // 만약 기다리는 lock의 holder에 wait_on_lock이 있다면..!
-  // // struct lock *wait_lock = cur->wait_on_lock;
-  // // if (wait_lock != NULL)
-  // // {
-  // //   struct thread *holder = wait_lock->holder;
-  // //   if (holder->wait_on_lock != NULL)
-  // //     donate_priority ();
-  // // }
-  // // /* 스레드의 우선 순위가 변경되었을 때, 우선 순위에 따라 선점이 발생하도록 한다. */
-  // test_max_priority ();
-
-  // intr_set_level (old_level);
-
   struct thread *cur = thread_current(); //Get current process info
   int old_priority = cur->priority; //Temporary store last priority
 
@@ -437,13 +398,13 @@ thread_set_priority (int new_priority)
   refresh_priority(); //Refresh
 
   //Compare old priority and current priority and if not same, do something.
-  if(old_priority < cur->priority)
+  if (old_priority < cur->priority)
   {
     donate_priority();
   }
-  else if(old_priority > cur->priority)
+  else if (old_priority > cur->priority)
   {
-    test_max_priority();
+    test_max_priority();  // 버려줘야 하니까 yield를 하나 보다
   }
 }
 
@@ -779,32 +740,21 @@ bool cmp_priority(const struct list_elem *a_, const struct list_elem *b_, void *
 void
 donate_priority ()
 {
-  /* priority donation을 수행하는 함수. 
-   * 현재 스레드가 기다리고 있는 lock과 연결된 모든 스레드들을 순회하며
-   * 현재 스레드의 우선 순위를 lock을 보유하고 있는 스레드에게 기부한다.
-   * (nested depth는 8로 제한한다) 
-   * nested donation일 때만 따지는 이유는 / donations를 multiple 일때만 따지는 이유는
-   * 이미 lock을 기다리는 스레드의 우선순위가 thread_current()로 인해 변해있기 때문이지..! */
+  struct thread *cur_thread = thread_current(); //Get current process info
+  struct lock *cur_lock = cur_thread->wait_on_lock; //Get lock info
+  int depth = 0;
 
-  int priority_of_current = thread_current ()->priority;
-  struct thread *holder = thread_current ()->wait_on_lock->holder;
-  struct lock *lock_waited = holder->wait_on_lock;
-  int i = 0;
-
-
-  for (i = 0; i < 8; i++)
+  //Search for nested donation
+  while(cur_lock != NULL && cur_lock->holder != NULL && depth < 8)
   {
-    if (lock_waited == NULL)
+    if(cur_lock->holder->priority > cur_thread->priority)
       break;
 
-    holder = lock_waited->holder;
+    cur_lock->holder->priority = cur_thread->priority; //donate priority
+    cur_thread = cur_lock->holder; //move to next process
+    cur_lock = cur_thread->wait_on_lock; //get new lock
 
-    if (holder == NULL || holder->priority > priority_of_current)
-      break;
-
-    holder->priority = priority_of_current;
-
-    lock_waited = holder->wait_on_lock;
+    depth++;
   }
 }
 
@@ -819,15 +769,7 @@ remove_with_lock (struct lock *lock)
 
   for (e = list_begin (&cur->donations); e != list_end (&cur->donations);)
   {
-    struct thread *t = list_entry (e, struct thread, allelem);
-    // if (t->wait_on_lock == lock)
-    // {
-    //   e = list_remove (e);
-    // }
-    // else
-    // {
-    //   e = list_next ();
-    // }
+    struct thread *t = list_entry (e, struct thread, donation_elem);
     e = list_next (e);
     if (t->wait_on_lock == lock)
     {
@@ -848,6 +790,6 @@ refresh_priority ()
   struct list_elem *donor_elem = list_front (&cur->donations);
   struct thread *donor = list_entry (donor_elem, struct thread, donation_elem);
 
-  if (cur->init_priority < donor->priority)
+  if (donor->priority > cur->init_priority)
     cur->priority = donor->priority;
 }
