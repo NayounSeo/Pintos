@@ -204,6 +204,8 @@ lock_acquire (struct lock *lock)
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  enum intr_level old_level = intr_disable();
+
   /* 해당 lock의 holder가 존재한다면 아래 작업을 수행한다. */
   if (lock->holder != NULL) {
     /* 현재 스레드의 wait_on_lock 변수에 획득 하기를 기다리는 lock의 주소를 저장 */
@@ -211,11 +213,11 @@ lock_acquire (struct lock *lock)
     /* multiple donation을 고려하기 위해 이전 상태의 우선 순위를 기억, 
      * donation을 받은 스레드의 구조체를 list로 관리한다. */
     struct thread *holder = lock->holder;
-    list_insert_ordered (&holder->donations, &thread_current ()->donation_elem, cmp_priority, NULL);
 
-    if (holder->priority < thread_current ()->priority)
+    if (holder->priority < thread_current ()->priority){
       holder->priority = thread_current ()->priority;
-
+      list_insert_ordered (&holder->donations, &thread_current ()->donation_elem, cmp_priority, NULL);
+    }
     /* priority donation을 수행하기 위해 donate_priority () 함수 호출 */
     donate_priority ();
   }
@@ -225,6 +227,8 @@ lock_acquire (struct lock *lock)
 
   /* lock을 획득 한 후 lock holder를 갱신한다. */
   lock->holder = thread_current ();
+
+  intr_set_level(old_level);
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
