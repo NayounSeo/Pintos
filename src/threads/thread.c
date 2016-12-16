@@ -404,7 +404,7 @@ thread_set_priority (int new_priority)
   }
   else if (old_priority > cur->priority)
   {
-    test_max_priority();  // 버려줘야 하니까 yield를 하나 보다
+    test_max_priority();
   }
 }
 
@@ -740,21 +740,30 @@ bool cmp_priority(const struct list_elem *a_, const struct list_elem *b_, void *
 void
 donate_priority ()
 {
-  struct thread *cur_thread = thread_current(); //Get current process info
-  struct lock *cur_lock = cur_thread->wait_on_lock; //Get lock info
-  int depth = 0;
+  /* priority donation을 수행하는 함수. 
+   * 현재 스레드가 기다리고 있는 lock과 연결된 모든 스레드들을 순회하며
+   * 현재 스레드의 우선 순위를 lock을 보유하고 있는 스레드에게 기부한다.
+   * (nested depth는 8로 제한한다) 
+   * nested donation일 때만 따지는 이유는 / donations를 multiple 일때만 따지는 이유는
+   * 이미 lock을 기다리는 스레드의 우선순위가 thread_current()로 인해 변해있기 때문이지..! */
 
-  //Search for nested donation
-  while(cur_lock != NULL && cur_lock->holder != NULL && depth < 8)
+  int priority_of_current = thread_current ()->priority;
+  struct lock *lock_waited = thread_current ()->wait_on_lock;
+  struct thread *holder;
+  int i = 0;
+
+  for (i = 0; i < 8; i++)
   {
-    if(cur_lock->holder->priority > cur_thread->priority)
+    if (lock_waited == NULL)
       break;
 
-    cur_lock->holder->priority = cur_thread->priority; //donate priority
-    cur_thread = cur_lock->holder; //move to next process
-    cur_lock = cur_thread->wait_on_lock; //get new lock
+    if (lock_waited->holder == NULL || lock_waited->holder->priority > priority_of_current)
+      break;
 
-    depth++;
+    lock_waited->holder->priority = priority_of_current;
+
+    holder = lock_waited->holder;
+    lock_waited = holder->wait_on_lock;
   }
 }
 
