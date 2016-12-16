@@ -391,37 +391,60 @@ thread_set_priority (int new_priority)
   /* donation을 고려하여 thread_set_priority 수정
    * refresh_priority()를 사용하여 우선 선위 변경으로 인한 donation 관련 정보를 갱신한다. 
    * donation_priority, test_max_priority() 적절히 사용하고 스케줄링 */
-  enum intr_level old_level;
-  old_level = intr_disable ();
-  struct thread *cur = thread_current ();
+  // enum intr_level old_level;
+  // old_level = intr_disable ();
+  // struct thread *cur = thread_current ();
+  // int old_priority = cur->priority;
 
-  // 현재 스레드가 기부받지 않았을 때
-  if (list_empty (&cur->donations))
+  // // 현재 스레드가 기부받지 않았을 때
+  // if (list_empty (&cur->donations))
+  // {
+  //   // new_priority로 초기 우선 순위와 현재 우선 순위 모두 수정
+  //   cur->init_priority = new_priority;
+  //   cur->priority = new_priority;
+  // }
+  // else  // 기부받은 우선 순위가 있었다면
+  // {
+  //   refresh_priority ();
+
+  //   if (new_priority < cur->priority)
+  //   {
+  //     cur->init_priority = new_priority;  // 초기 우선 순위만 수정
+  //   }
+  //   else
+  //   {
+  //     cur->priority = new_priority;
+  //   }
+  // }
+
+  // // 만약 기다리는 lock의 holder에 wait_on_lock이 있다면..!
+  // // struct lock *wait_lock = cur->wait_on_lock;
+  // // if (wait_lock != NULL)
+  // // {
+  // //   struct thread *holder = wait_lock->holder;
+  // //   if (holder->wait_on_lock != NULL)
+  // //     donate_priority ();
+  // // }
+  // // /* 스레드의 우선 순위가 변경되었을 때, 우선 순위에 따라 선점이 발생하도록 한다. */
+  // test_max_priority ();
+
+  // intr_set_level (old_level);
+
+  struct thread *cur = thread_current(); //Get current process info
+  int old_priority = cur->priority; //Temporary store last priority
+
+  cur->init_priority = new_priority; //Update with new priority
+  refresh_priority(); //Refresh
+
+  //Compare old priority and current priority and if not same, do something.
+  if(old_priority < cur->priority)
   {
-    // new_priority로 초기 우선 순위와 현재 우선 순위 모두 수정
-    cur->init_priority = new_priority;
-    cur->priority = new_priority;
+    donate_priority();
   }
-  else
+  else if(old_priority > cur->priority)
   {
-    if (new_priority < cur->priority)
-    {
-      cur->init_priority = new_priority;  // 초기 우선 순위만 수정
-    }
+    test_max_priority();
   }
-
-  refresh_priority ();
-
-
-  // 만약 기다리는 lock의 holder에 wait_on_lock이 있다면..!
-  struct thread *holder = cur->wait_on_lock->holder;
-  if (holder->wait_on_lock != NULL)
-    donate_priority ();
-
-  /* 스레드의 우선 순위가 변경되었을 때, 우선 순위에 따라 선점이 발생하도록 한다. */
-  test_max_priority ();
-
-  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -788,27 +811,36 @@ donate_priority ()
 void
 remove_with_lock (struct lock *lock)
 {
-  struct list_elem *e = list_begin(&thread_current()->donations);
-  struct list_elem *next;
-  while (e != list_end(&thread_current()->donations))
+  struct thread *cur = thread_current ();
+  struct list_elem *e;
+
+  if (list_empty(&cur->donations))
+    return;
+
+  for (e = list_begin (&cur->donations); e != list_end (&cur->donations);)
+  {
+    struct thread *t = list_entry (e, struct thread, allelem);
+    // if (t->wait_on_lock == lock)
+    // {
+    //   e = list_remove (e);
+    // }
+    // else
+    // {
+    //   e = list_next ();
+    // }
+    e = list_next (e);
+    if (t->wait_on_lock == lock)
     {
-      struct thread *t = list_entry(e, struct thread, donation_elem);
-      next = list_next(e);
-      if (t->wait_on_lock == lock)
-      {
-        e = list_remove(e);
-      }
-      else 
-      {
-        e = list_next(e);
-      }
+      list_remove (&t->donation_elem);
     }
+  }
 }
 
 void
 refresh_priority ()
 {
   struct thread *cur = thread_current ();
+  cur->priority = cur->init_priority; // ☆처음 우선 순위를 기억한다는게 이런 건가요..!
 
   if (list_empty (&cur->donations)) 
     return;
@@ -816,9 +848,6 @@ refresh_priority ()
   struct list_elem *donor_elem = list_front (&cur->donations);
   struct thread *donor = list_entry (donor_elem, struct thread, donation_elem);
 
-  cur->priority = cur->init_priority;
-
   if (cur->init_priority < donor->priority)
     cur->priority = donor->priority;
-
 }

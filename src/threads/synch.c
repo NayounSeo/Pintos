@@ -214,8 +214,9 @@ lock_acquire (struct lock *lock)
      * donation을 받은 스레드의 구조체를 list로 관리한다. */
     struct thread *holder = lock->holder;
 
-    if (holder->priority < thread_current ()->priority){
-      holder->priority = thread_current ()->priority;
+    if (holder->priority < thread_current ()->priority)
+    {
+      // holder->priority = thread_current ()->priority;
       list_insert_ordered (&holder->donations, &thread_current ()->donation_elem, cmp_priority, NULL);
     }
     /* priority donation을 수행하기 위해 donate_priority () 함수 호출 */
@@ -223,10 +224,10 @@ lock_acquire (struct lock *lock)
   }
 
   sema_down (&lock->semaphore);
-  thread_current ()->wait_on_lock = NULL;
-
   /* lock을 획득 한 후 lock holder를 갱신한다. */
   lock->holder = thread_current ();
+
+  thread_current ()->wait_on_lock = NULL;
 
   intr_set_level(old_level);
 }
