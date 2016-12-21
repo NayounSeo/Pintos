@@ -14,11 +14,20 @@
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
+#include "threads/fixed_point.h"
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
 #define THREAD_MAGIC 0xcd6abf4b
+
+/* Multi-level Feedback Queue */
+#define NICE_DEFAULT 0
+#define RECENT_CPU_DEFAULT 0
+#define LOAD_AVG_DEFAULT 0
+
+int load_avg; /* 최근 1분 동안 수행 가능한 프로세스의 평균 개수 / 시스템 내 READY 상태 Thread 개수의 평균
+               * fixed point 값으로 처리함 */
 
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
@@ -116,6 +125,8 @@ thread_start (void)
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
+
+  load_avg = LOAD_AVG_DEFAULT;
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -389,7 +400,7 @@ void
 thread_set_priority (int new_priority) 
 {
   /* donation을 고려하여 thread_set_priority 수정
-   * refresh_priority()를 사용하여 우선 선위 변경으로 인한 donation 관련 정보를 갱신한다. 
+   * refresh_priority()를 사용하여 우선 순위 변경으로 인한 donation 관련 정보를 갱신한다. 
    * donation_priority, test_max_priority() 적절히 사용하고 스케줄링 */
   struct thread *cur = thread_current(); //Get current process info
   int old_priority = cur->priority; //Temporary store last priority
@@ -400,11 +411,11 @@ thread_set_priority (int new_priority)
   //Compare old priority and current priority and if not same, do something.
   if (old_priority < cur->priority)
   {
-    donate_priority();
+    donate_priority(); //현재 스레드가 donations 리스트에서 기부받았다는 이야기! nested donation 실행
   }
   else if (old_priority > cur->priority)
   {
-    test_max_priority();
+    test_max_priority();  // 우선 순위가 낮아졌으므로 ready 리스트와 비교 검사 실행
   }
 }
 
@@ -538,9 +549,11 @@ init_thread (struct thread *t, const char *name, int priority)
 
   /* priority donation 관련 자료구조 초기화 */
   t->init_priority = priority;
-  // lock_init(t->wait_on_lock);
   list_init(&t->donations); /* multiple donation을 고려하기 위해 사용 */
-  // donation_elem = NULL;
+
+  /* Multi-level feedback queue */
+  t->nice = NICE_DEFAULT;
+  t->recent_cpu = RECENT_CPU_DEFAULT;
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -801,4 +814,80 @@ refresh_priority ()
 
   if (donor->priority > cur->init_priority)
     cur->priority = donor->priority;
+}
+
+/* 10. Multi-level feeback queue 
+ * 변수이름_f : fized point number */
+void
+mlfqs_priority (struct thread *t)
+{
+  /* 해당 스레드가 idle_thread가 아닌지 검사 */
+  if (t == idle_thread)
+    return;
+
+  /* priority 계산식을 구현 TODO : recent_cpu는 17.14 fixed point 숫자인가? */
+  int recent_cpu_over_4_to_f = div_mixed (t->recent_cpu, 4);
+  int to_sub_f = - (add_mixed (recent_cpu_over_4_to_f, t->nice * 2));
+
+  /* priority = PRI_MAX - (recent_cpu / 4) - (nice * 2) */
+  int new_priority_f = add_fp (PRI_MAX, to_sub_f);
+  /* TODO : 반올림일까 버림일까...! */
+  t->priority = fp_to_int (new_priority_f);
+}
+
+void
+mlfqs_recent_cpu (struct thread *t)
+{
+  /* 해당 스레드가 idle_thread가 아닌지 검사 */
+  if (t == idle_thread)
+    return;
+
+  int twice_load_avg = mult_mixed (load_avg, 2);
+  int denominator = add_mixed (twice_load_avg, 1);
+  denominator = mult_fp (denominator, t->recent_cpu);
+  denominator = add_mixed (denominator, t->nice);
+
+  /* recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice */
+  t->recent_cpu = div_fp (twice_load_avg, denominator); 
+}
+
+void
+mlfqs_load_avg () {
+  /* load_avg는 0보다 작아질 수 없다. */
+  size_t ready_cnt = list_size (&ready_list);
+
+  int portion_59 = div_int_to_fp (59, 60);
+  int portion_1 = div_int_to_fp (1, 60);
+  int former = mult_fp (portion_59, load_avg);
+  int latter = mult_fp (portion_1, ready_cnt);
+
+  /* load_avg = (59/60) * load_avg + (1/60) * ready_threads */
+  load_avg = add_fp (former, latter);
+}
+
+void 
+mlfqs_increment ()
+{
+  if (thread_current () == idle_thread)
+    return;
+
+  struct thread *cur = thread_current ();
+  cur->recent_cpu = add_mixed (cur->recent_cpu, 1);
+}
+
+void
+mlfqs_recalc ()
+{
+  /* 모든 thread의 recent_cpu와 priority값을 재계산한다.*/
+  // TODO : 인터럽트 처리 해줘야 할까...??????????
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      mlfqs_recent_cpu (t);
+      mlfqs_priority (t);
+    }
+
 }
