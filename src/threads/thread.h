@@ -184,5 +184,7 @@ void mlfqs_recent_cpu (struct thread * t);
 void mlfqs_load_avg (void);
 void mlfqs_increment (void);
 void mlfqs_recalc (void);
+/* thread_mlfqs 값을 알기 위해 규정 외 함수 추가 */
+bool get_thread_mlfqs (void);
 
 #endif /* threads/thread.h */

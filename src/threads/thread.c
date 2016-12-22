@@ -401,21 +401,24 @@ thread_set_priority (int new_priority)
 {
   /* donation을 고려하여 thread_set_priority 수정
    * refresh_priority()를 사용하여 우선 순위 변경으로 인한 donation 관련 정보를 갱신한다. 
-   * donation_priority, test_max_priority() 적절히 사용하고 스케줄링 */
-  struct thread *cur = thread_current(); //Get current process info
-  int old_priority = cur->priority; //Temporary store last priority
+   * donation_priority, test_max_priority() 적절히 사용하고 스케줄링 
+   * MLFQS 스케줄러에서는 우선 순위를 임의로 변경할 수 없다. */
+  if (!thread_mlfqs) {
+    struct thread *cur = thread_current(); //Get current process info
+    int old_priority = cur->priority; //Temporary store last priority
 
-  cur->init_priority = new_priority; //Update with new priority
-  refresh_priority(); //Refresh
+    cur->init_priority = new_priority; //Update with new priority
+    refresh_priority(); //Refresh
 
-  //Compare old priority and current priority and if not same, do something.
-  if (old_priority < cur->priority)
-  {
-    donate_priority(); //현재 스레드가 donations 리스트에서 기부받았다는 이야기! nested donation 실행
-  }
-  else if (old_priority > cur->priority)
-  {
-    test_max_priority();  // 우선 순위가 낮아졌으므로 ready 리스트와 비교 검사 실행
+    //Compare old priority and current priority and if not same, do something.
+    if (old_priority < cur->priority)
+    {
+      donate_priority(); //현재 스레드가 donations 리스트에서 기부받았다는 이야기! nested donation 실행
+    }
+    else if (old_priority > cur->priority)
+    {
+      test_max_priority();  // 우선 순위가 낮아졌으므로 ready 리스트와 비교 검사 실행
+    }
   }
 }
 
@@ -428,33 +431,49 @@ thread_get_priority (void)
 
 /* Sets the current thread's nice value to NICE. */
 void
-thread_set_nice (int nice UNUSED) 
+thread_set_nice (int nice) 
 {
-  /* Not yet implemented. */
+  /* 인터럽트 비활성화 후 현재 스레드의 nice 값 변경 */
+  enum intr_level old_level = intr_disable ();
+
+  struct thread *cur = thread_current ();
+  cur->nice = nice;
+
+   /* nice값 변경 후에 현재 스레드의 우선 순위를 재계산하고 우선순위에 의해 스케줄링 한다. */
+  mlfqs_priority (cur);
+  test_max_priority ();
+
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  int nice_current = thread_current ()->nice;
+  intr_set_level (old_level);
+  return nice_current;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  int current_load = mult_mixed (load_avg, 100);
+  intr_set_level (old_level);
+  return current_load;
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  enum intr_level old_level = intr_disable ();
+  int current_recent = mult_mixed (thread_current ()->recent_cpu, 100);
+  intr_set_level (old_level);
+  return current_recent;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -863,6 +882,9 @@ mlfqs_load_avg () {
 
   /* load_avg = (59/60) * load_avg + (1/60) * ready_threads */
   load_avg = add_fp (former, latter);
+
+  if (load_avg < 0)
+    load_avg = 0;
 }
 
 void 
@@ -873,6 +895,7 @@ mlfqs_increment ()
 
   struct thread *cur = thread_current ();
   cur->recent_cpu = add_mixed (cur->recent_cpu, 1);
+
 }
 
 void
@@ -890,4 +913,10 @@ mlfqs_recalc ()
       mlfqs_priority (t);
     }
 
+}
+
+bool
+get_thread_mlfqs ()
+{
+  return thread_mlfqs;
 }

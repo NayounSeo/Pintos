@@ -13,7 +13,7 @@ int add_mixed (int x, int n);  /* FP와 int의 덧셈 */
 int sub_fp (int x, int y);  /* FP의 뺄셈 (x - y) */
 int sub_mixed (int x, int n);  /* FP와 int의 뺄셈(x - n) */
 int mult_fp (int x, int y);  /* FP의 곱셈 */
-int mult_mixed (int x, int y);  /* FP와 int의 곱셈 */
+int mult_mixed (int x, int n);  /* FP와 int의 곱셈 */
 int div_fp (int x, int y);  /* FP의 나눗셈 (x / y) */
 int div_mixed (int x, int n);  /* FP와 int의 나눗셈(x / n) */
 int div_int_to_fp (int n, int m);
@@ -78,18 +78,24 @@ mult_mixed (int x, int n)
 int
 div_fp (int x, int y)
 {
+  if (y == 0)
+    return 0;
   return ((int64_t)x) * F / y;
 }
 
 int
 div_mixed (int x, int n)
 {
+  if (n == 0)
+    return 0;
   return x / n;
 }
 
 int
 div_int_to_fp (int n, int m)
 {
+  if (m == 0)
+    return 0;
   n = int_to_fp (n);
   return div_mixed (n, m);
 }
