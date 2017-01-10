@@ -26,7 +26,7 @@ int_to_fp (int n)
 
 int fp_to_int_round (int x)
 {
-  if (x > 0)
+  if (x >= 0)
   {
     return (x + F / 2) / F;
   }
@@ -48,7 +48,7 @@ add_fp (int x, int y)
 int
 add_mixed (int x, int n)
 {
-  return x + n * F;
+  return x + int_to_fp (n);
 }
 
 int
@@ -60,7 +60,7 @@ sub_fp (int x, int y)
 int
 sub_mixed (int x, int n)
 {
-  return x - n * F;
+  return x - int_to_fp (n);
 }
 
 int

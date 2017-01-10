@@ -461,7 +461,7 @@ int
 thread_get_load_avg (void) 
 {
   enum intr_level old_level = intr_disable ();
-  int current_load = mult_mixed (load_avg, 100);
+  int current_load = fp_to_int_round (mult_mixed (load_avg, 100));
   intr_set_level (old_level);
   return current_load;
 }
@@ -471,7 +471,7 @@ int
 thread_get_recent_cpu (void) 
 {
   enum intr_level old_level = intr_disable ();
-  int current_recent = mult_mixed (thread_current ()->recent_cpu, 100);
+  int current_recent = fp_to_int_round (mult_mixed (thread_current ()->recent_cpu, 100));
   intr_set_level (old_level);
   return current_recent;
 }
@@ -845,13 +845,19 @@ mlfqs_priority (struct thread *t)
     return;
 
   /* priority 계산식을 구현 TODO : recent_cpu는 17.14 fixed point 숫자인가? */
+  int max_priority = int_to_fp (PRI_MAX);
   int recent_cpu_over_4_to_f = div_mixed (t->recent_cpu, 4);
-  int to_sub_f = - (add_mixed (recent_cpu_over_4_to_f, t->nice * 2));
+  int to_sub_f = add_mixed (recent_cpu_over_4_to_f, t->nice * 2);
 
-  /* priority = PRI_MAX - (recent_cpu / 4) - (nice * 2) */
-  int new_priority_f = add_fp (PRI_MAX, to_sub_f);
-  /* TODO : 반올림일까 버림일까...! */
+  // priority = PRI_MAX - (recent_cpu / 4) - (nice * 2) 
+  int new_priority_f = sub_fp (max_priority, to_sub_f);
   t->priority = fp_to_int (new_priority_f);
+
+  /* 범위 외 값 처리도 해야 했다!*/
+  if (t->priority > PRI_MAX) 
+    t->priority = PRI_MAX;
+  if (t->priority < PRI_MIN)
+    t->priority = PRI_MIN;
 }
 
 void
@@ -861,30 +867,28 @@ mlfqs_recent_cpu (struct thread *t)
   if (t == idle_thread)
     return;
 
-  int twice_load_avg = mult_mixed (load_avg, 2);
-  int denominator = add_mixed (twice_load_avg, 1);
-  denominator = mult_fp (denominator, t->recent_cpu);
-  denominator = add_mixed (denominator, t->nice);
+  int load_avg_to_cal = mult_mixed (load_avg, 2);
+  load_avg_to_cal = div_fp (load_avg_to_cal, add_mixed (load_avg_to_cal, 1));
+  int temp_cpu = mult_fp (load_avg_to_cal, t->recent_cpu);
 
   /* recent_cpu = (2 * load_avg) / (2 * load_avg + 1) * recent_cpu + nice */
-  t->recent_cpu = div_fp (twice_load_avg, denominator); 
+  t->recent_cpu = add_mixed (temp_cpu, t->nice);
 }
 
 void
 mlfqs_load_avg () {
-  /* load_avg는 0보다 작아질 수 없다. */
-  size_t ready_cnt = list_size (&ready_list);
+  /* Get current amount of threads */
+  int ready_cnt = list_size(&ready_list);
+  if(thread_current() != idle_thread) /* If not idle thread, increment 1 */
+    ready_cnt += 1;
 
-  int portion_59 = div_int_to_fp (59, 60);
-  int portion_1 = div_int_to_fp (1, 60);
-  int former = mult_fp (portion_59, load_avg);
-  int latter = mult_fp (portion_1, ready_cnt);
+  int portion_1 = div_mixed (int_to_fp (ready_cnt), 60);
+  int portion_59 = div_mixed (int_to_fp (59), 60);
+  portion_59 = mult_fp (portion_59, load_avg);
 
-  /* load_avg = (59/60) * load_avg + (1/60) * ready_threads */
-  load_avg = add_fp (former, latter);
+  load_avg = add_fp (portion_1, portion_59);
 
-  if (load_avg < 0)
-    load_avg = 0;
+  ASSERT (load_avg >= 0);
 }
 
 void 
